@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>寶寶生長管理系統 - 12歲精準模擬版</title>
+    <style>
+        :root { --primary: #3498db; --secondary: #2ecc71; --warning: #f39c12; --danger: #e74c3c; --info: #9b59b6; --dark: #34495e; }
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f7f6; padding: 20px; }
+        .container { max-width: 1250px; margin: auto; display: flex; gap: 20px; }
+        .panel { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .input-section { flex: 1; min-width: 320px; border-top: 5px solid var(--primary); }
+        .list-section { flex: 3; border-top: 5px solid var(--secondary); }
+        h2, h3 { margin-top: 0; color: #2c3e50; display: flex; align-items: center; gap: 10px; }
+        .input-group { margin-bottom: 12px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #34495e; font-size: 0.9em; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.2s; margin-top: 5px; }
+        .btn-save { background-color: var(--secondary); color: white; }
+        .btn-update { background-color: var(--warning); color: white; display: none; }
+        .btn-predict { background-color: var(--primary); color: white; margin-top: 10px; }
+        .btn-export { background-color: var(--info); color: white; margin-top: 20px; }
+        .btn-import { background-color: var(--dark); color: white; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background-color: #f8f9fa; padding: 12px; text-align: left; border-bottom: 2px solid #eee; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        tr:hover { background-color: #f1f9ff; cursor: pointer; }
+        .badge-date { background: #e1f5fe; color: #0288d1; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
+        .predict-val { color: #e67e22; font-weight: bold; }
+        .del-btn { color: var(--danger); border: 1px solid var(--danger); background: none; padding: 2px 8px; width: auto; font-size: 0.8em; }
+        .predict-result-box { margin-top: 15px; padding: 15px; background: #fff9db; border-radius: 8px; border: 1px solid #ffec99; display: none; }
+        .backup-zone { margin-top: 30px; padding-top: 20px; border-top: 2px dashed #ddd; }
+        #file-input { display: none; }
+        .info-tag { font-size: 0.75em; color: #7f8c8d; font-weight: normal; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="panel input-section">
+        <h2 id="form-title">👶 新增紀錄</h2>
+        <div class="input-group"><label>寶寶姓名</label><input type="text" id="in_name"></div>
+        <div class="input-group">
+            <label>性別</label>
+            <select id="in_gender"><option value="男">男</option><option value="女">女</option></select>
+        </div>
+        <div class="input-group"><label>出生日期</label><input type="date" id="in_birthday"></div>
+        <div class="input-group"><label>身高 (cm)</label><input type="number" id="in_height" step="0.1"></div>
+        <div class="input-group"><label>體重 (kg)</label><input type="number" id="in_weight" step="0.1"></div>
+        
+        <button id="btn-save" class="btn-save" onclick="saveData()">💾 儲存今日紀錄</button>
+        <button id="btn-update" class="btn-update" onclick="updateData()">🆙 更新此筆紀錄</button>
+        <button id="btn-cancel" style="display:none; background:#ccc;" onclick="resetForm()">取消編輯</button>
+
+        <hr>
+        <h3>🔮 未來成長預算 <span class="info-tag">(上限12歲)</span></h3>
+        <div class="input-group">
+            <label>預測幾個月後？</label>
+            <input type="number" id="manual_months" value="12">
+        </div>
+        <button class="btn-predict" onclick="runManualPredict()">開始計算</button>
+        <div id="predict_result" class="predict-result-box"></div>
+
+        <div class="backup-zone">
+            <h3>📂 資料備份與還原</h3>
+            <button class="btn-export" onclick="exportToCSV()">📤 匯出 CSV 備份</button>
+            <button class="btn-import" onclick="document.getElementById('file-input').click()">📥 匯入 CSV 還原</button>
+            <input type="file" id="file-input" accept=".csv" onchange="importFromCSV(event)">
+        </div>
+    </div>
+
+    <div class="panel list-section">
+        <h2>🔍 紀錄清單與今日推估 <span class="info-tag">*依0-12歲成長模型推算</span></h2>
+        <input type="text" id="search" placeholder="搜尋姓名..." onkeyup="renderTable()" style="margin-bottom:15px; border:2px solid var(--primary); padding:10px; width:100%; border-radius:6px; box-sizing:border-box;">
+        <table>
+            <thead>
+                <tr>
+                    <th>姓名/生日</th>
+                    <th>紀錄日期</th>
+                    <th>原始紀錄</th>
+                    <th>目前年齡</th>
+                    <th>💡 今日預計</th>
+                    <th>管理</th>
+                </tr>
+            </thead>
+            <tbody id="table_body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    let records = JSON.parse(localStorage.getItem('babyRecords')) || [];
+    let editingId = null;
+
+    // 核心成長模型邏輯 (同步 Python 版)
+    function getGrowthRate(ageYears) {
+        if (ageYears < 1) return { hr: 2.0, wr: 0.5 };
+        if (ageYears < 2) return { hr: 1.0, wr: 0.25 };
+        if (ageYears < 4) return { hr: 0.6, wr: 0.14 };
+        if (ageYears < 6) return { hr: 0.45, wr: 0.14 };
+        if (ageYears < 9) return { hr: 0.45, wr: 0.2 };
+        if (ageYears < 12) return { hr: 0.55, wr: 0.35 };
+        return { hr: 0, wr: 0 }; // 超過12歲停止計算
+    }
+
+    function calculateGrowthProgress(startH, startW, birthDate, recordDate, targetDate) {
+        let currentH = startH;
+        let currentW = startW;
+        let birth = new Date(birthDate);
+        let currentIterDate = new Date(recordDate);
+        
+        // 以「月」為單位進行累加計算，直到目標日期或滿12歲
+        while (currentIterDate < targetDate) {
+            let ageY = (currentIterDate - birth) / (1000 * 60 * 60 * 24 * 365.25);
+            if (ageY >= 12) break; // 鎖定12歲上限
+
+            let rates = getGrowthRate(ageY);
+            currentH += rates.hr;
+            currentW += rates.wr;
+            
+            // 增加一個月
+            currentIterDate.setMonth(currentIterDate.getMonth() + 1);
+        }
+        return { h: currentH.toFixed(1), w: currentW.toFixed(1) };
+    }
+
+    // 儲存、渲染與其他功能
+    function saveData() {
+        const baby = {
+            id: Date.now(),
+            name: document.getElementById('in_name').value,
+            gender: document.getElementById('in_gender').value,
+            birthday: document.getElementById('in_birthday').value,
+            height: parseFloat(document.getElementById('in_height').value),
+            weight: parseFloat(document.getElementById('in_weight').value),
+            recordDate: new Date().toLocaleDateString()
+        };
+        if(!baby.name || !baby.birthday || isNaN(baby.height)) return alert("請填寫完整資訊");
+        records.push(baby);
+        saveAndRefresh();
+        resetForm();
+    }
+
+    function updateData() {
+        const index = records.findIndex(r => r.id === editingId);
+        if (index > -1) {
+            records[index].name = document.getElementById('in_name').value;
+            records[index].gender = document.getElementById('in_gender').value;
+            records[index].birthday = document.getElementById('in_birthday').value;
+            records[index].height = parseFloat(document.getElementById('in_height').value);
+            records[index].weight = parseFloat(document.getElementById('in_weight').value);
+            saveAndRefresh();
+            resetForm();
+        }
+    }
+
+    function runManualPredict() {
+        const h = parseFloat(document.getElementById('in_height').value);
+        const w = parseFloat(document.getElementById('in_weight').value);
+        const b = document.getElementById('in_birthday').value;
+        const m = parseInt(document.getElementById('manual_months').value);
+
+        if(isNaN(h) || !b) return alert("請選取紀錄或輸入資料");
+
+        let targetDate = new Date();
+        targetDate.setMonth(targetDate.getMonth() + m);
+
+        let res = calculateGrowthProgress(h, w, b, new Date().toLocaleDateString(), targetDate);
+        
+        const box = document.getElementById('predict_result');
+        box.style.display = 'block';
+        box.innerHTML = `<strong>預測結果 (至多12歲)：</strong><br>📏 身高：<span class="predict-val">${res.h} cm</span><br>⚖️ 體重：<span class="predict-val">${res.w} kg</span>`;
+    }
+
+    function saveAndRefresh() {
+        localStorage.setItem('babyRecords', JSON.stringify(records));
+        renderTable();
+    }
+
+    function renderTable() {
+        const search = document.getElementById('search').value.toLowerCase();
+        const tbody = document.getElementById('table_body');
+        tbody.innerHTML = '';
+        records.filter(r => r.name.toLowerCase().includes(search)).reverse().forEach(r => {
+            let birth = new Date(r.birthday);
+            let today = new Date();
+            let y = today.getFullYear() - birth.getFullYear();
+            let m = today.getMonth() - birth.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) { y--; m += 12; }
+            
+            let prog = calculateGrowthProgress(r.height, r.weight, r.birthday, r.recordDate, today);
+
+            const tr = document.createElement('tr');
+            tr.onclick = () => editRecord(r);
+            tr.innerHTML = `
+                <td><b>${r.name}</b><br><small>${r.birthday}</small></td>
+                <td><span class="badge-date">${r.recordDate}</span></td>
+                <td>${r.height} / ${r.weight}</td>
+                <td>${y}歲${m}個月</td>
+                <td><span class="predict-val">${prog.h} cm</span><br><span class="predict-val">${prog.w} kg</span></td>
+                <td><button class="del-btn" onclick="deleteItem(event, ${r.id})">刪除</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function exportToCSV() {
+        let csv = "\ufeff姓名,性別,生日,紀錄日期,身高,體重\n";
+        records.forEach(r => csv += `${r.name},${r.gender},${r.birthday},${r.recordDate},${r.height},${r.weight}\n`);
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+        link.download = `生長備份_${new Date().toLocaleDateString()}.csv`;
+        link.click();
+    }
+
+    function importFromCSV(event) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const lines = e.target.result.split(/\r?\n/);
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const c = lines[i].split(",");
+                records.push({ id: Date.now()+i, name: c[0], gender: c[1], birthday: c[2], recordDate: c[3], height: parseFloat(c[4]), weight: parseFloat(c[5]) });
+            }
+            saveAndRefresh();
+            event.target.value = '';
+        };
+        reader.readAsText(event.target.files[0]);
+    }
+
+    function editRecord(r) {
+        editingId = r.id;
+        document.getElementById('in_name').value = r.name;
+        document.getElementById('in_gender').value = r.gender;
+        document.getElementById('in_birthday').value = r.birthday;
+        document.getElementById('in_height').value = r.height;
+        document.getElementById('in_weight').value = r.weight;
+        document.getElementById('form-title').innerText = "📝 編輯紀錄";
+        document.getElementById('btn-save').style.display = "none";
+        document.getElementById('btn-update').style.display = "block";
+        document.getElementById('btn-cancel').style.display = "block";
+    }
+
+    function resetForm() {
+        editingId = null;
+        document.getElementById('in_name').value = '';
+        document.getElementById('in_birthday').value = '';
+        document.getElementById('in_height').value = '';
+        document.getElementById('in_weight').value = '';
+        document.getElementById('form-title').innerText = "👶 新增紀錄";
+        document.getElementById('btn-save').style.display = "block";
+        document.getElementById('btn-update').style.display = "none";
+        document.getElementById('btn-cancel').style.display = "none";
+    }
+
+    function deleteItem(e, id) {
+        e.stopPropagation();
+        if(confirm("確定刪除？")) { records = records.filter(r => r.id !== id); saveAndRefresh(); resetForm(); }
+    }
+
+    renderTable();
+</script>
+</body>
+</html>
